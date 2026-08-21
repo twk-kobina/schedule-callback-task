@@ -1,0 +1,320 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+# =============================================================================
+# Scheduled Callback system for Amazon Connect
+# -----------------------------------------------------------------------------
+# Provisions:
+#   * Two DynamoDB tables (slot counters + callback records), both with TTL
+#   * Two Lambda functions with PLACEHOLDER code (replace after deploy)
+#   * Two least-privilege IAM roles
+#   * Resource permissions letting Amazon Connect invoke both functions
+#
+# This template deploys as-is. After the stack is created, upload the real
+# function code to each Lambda.
+# =============================================================================
+
+Description: >-
+  Amazon Connect scheduled-callback backend: DynamoDB tables, two Lambda
+  functions (placeholder code), and least-privilege IAM roles.
+
+# -----------------------------------------------------------------------------
+# Parameters
+# -----------------------------------------------------------------------------
+Parameters:
+
+  ConnectInstanceId:
+    Type: String
+    Description: >-
+      Amazon Connect instance ID (the GUID only, not the full ARN). Used to scope
+      the connect:* IAM permissions and the invoke permission SourceAccount.
+    AllowedPattern: '[a-zA-Z0-9-]+'
+
+  TaskContactFlowId:
+    Type: String
+    Description: Task contact flow ID that each scheduled callback task will run.
+
+  ConnectQueueId:
+    Type: String
+    Default: ''
+    Description: >-
+      Optional fallback queue ID, used only when the contact flow does not pass a
+      queueId attribute. Leave blank to require the flow to supply it.
+
+  BusinessTimezone:
+    Type: String
+    Default: America/New_York
+    Description: IANA timezone name the business hours are expressed in.
+
+  SlotMinutes:
+    Type: Number
+    Default: 15
+    MinValue: 1
+    MaxValue: 60
+    Description: Length of each callback slot, in minutes.
+
+  SlotCapacity:
+    Type: Number
+    Default: 10
+    MinValue: 1
+    MaxValue: 1000
+    Description: Maximum bookings a single slot can hold.
+
+  LeadMinutes:
+    Type: Number
+    Default: 5
+    Description: Minimum lead time before the earliest same-day slot.
+
+  FallbackStartHour:
+    Type: Number
+    Default: 9
+    MinValue: 0
+    MaxValue: 23
+    Description: Start hour for the single fallback window (when timeRanges is absent).
+
+  FallbackEndHour:
+    Type: Number
+    Default: 20
+    MinValue: 0
+    MaxValue: 24
+    Description: End hour for the single fallback window (when timeRanges is absent).
+
+  EndBufferMinutes:
+    Type: Number
+    Default: 15
+    Description: Buffer at the end of each window so no slot is offered right at close.
+
+  SlotsTableName:
+    Type: String
+    Default: callback_slots
+    Description: Name for the slot-counter DynamoDB table.
+
+  CallbacksTableName:
+    Type: String
+    Default: callbacks_records
+    Description: Name for the callback-records DynamoDB table.
+
+  LambdaRuntime:
+    Type: String
+    Default: python3.14
+    AllowedValues: [python3.11, python3.12, python3.13, python3.14]
+    Description: Python runtime for both functions.
+
+# -----------------------------------------------------------------------------
+# Resources
+# -----------------------------------------------------------------------------
+Resources:
+
+  # ---------------------------------------------------------------------------
+  # DynamoDB tables
+  # ---------------------------------------------------------------------------
+
+  CallbackSlotsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Ref SlotsTableName
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: slotKey
+          AttributeType: S
+      KeySchema:
+        - AttributeName: slotKey
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: slotTtl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  CallbacksTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Ref CallbacksTableName
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: callbackId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: callbackId
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+  # ---------------------------------------------------------------------------
+  # IAM roles (least privilege)
+  # ---------------------------------------------------------------------------
+
+  # The suggester only reads/creates slots and reads Connect queue + hours-of-op.
+  SuggesterRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: suggester-permissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: SlotsTableReadWrite
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                Resource: !GetAtt CallbackSlotsTable.Arn
+              - Sid: ConnectReadQueueAndHours
+                Effect: Allow
+                Action:
+                  - connect:DescribeQueue
+                  - connect:DescribeHoursOfOperation
+                Resource: !Sub 'arn:aws:connect:${AWS::Region}:${AWS::AccountId}:instance/${ConnectInstanceId}/*'
+
+  # The booking function reserves slots, writes callback records, and starts tasks.
+  BookingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: booking-permissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: SlotsTableReadWrite
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                Resource: !GetAtt CallbackSlotsTable.Arn
+              - Sid: CallbacksTableWrite
+                Effect: Allow
+                Action:
+                  - dynamodb:UpdateItem
+                Resource: !GetAtt CallbacksTable.Arn
+              - Sid: ConnectStartTask
+                Effect: Allow
+                Action:
+                  - connect:StartTaskContact
+                Resource: !Sub 'arn:aws:connect:${AWS::Region}:${AWS::AccountId}:instance/${ConnectInstanceId}/*'
+
+  # ---------------------------------------------------------------------------
+  # Lambda functions (PLACEHOLDER code — replace after deploy)
+  # ---------------------------------------------------------------------------
+
+  SuggesterFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: callback-slot-suggester
+      Description: Suggests available callback time slots for a queue. (placeholder code)
+      Runtime: !Ref LambdaRuntime
+      Handler: index.lambda_handler
+      Role: !GetAtt SuggesterRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          # NOTE: AWS_REGION is reserved and set by Lambda automatically — do not add it.
+          BUSINESS_TZ: !Ref BusinessTimezone
+          SLOT_MINUTES: !Ref SlotMinutes
+          SLOT_CAPACITY: !Ref SlotCapacity
+          LEAD_MINUTES: !Ref LeadMinutes
+          FALLBACK_START_HOUR: !Ref FallbackStartHour
+          FALLBACK_END_HOUR: !Ref FallbackEndHour
+          END_BUFFER_MINUTES: !Ref EndBufferMinutes
+          SLOTS_TABLE: !Ref SlotsTableName
+          CALLBACKS_TABLE: !Ref CallbacksTableName
+          CONNECT_QUEUE_ID: !Ref ConnectQueueId
+      Code:
+        ZipFile: |
+          def lambda_handler(event, context):
+              # PLACEHOLDER — replace with the real slot-suggester code after deploy.
+              return {
+                  "result": "NOT_IMPLEMENTED",
+                  "message": "Placeholder callback-slot-suggester. Upload the real code.",
+              }
+
+  BookingFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: callback-slot-booking
+      Description: Reserves a slot, records the callback, schedules a Connect task. (placeholder code)
+      Runtime: !Ref LambdaRuntime
+      Handler: index.lambda_handler
+      Role: !GetAtt BookingRole.Arn
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          # NOTE: AWS_REGION is reserved and set by Lambda automatically — do not add it.
+          BUSINESS_TZ: !Ref BusinessTimezone
+          SLOT_MINUTES: !Ref SlotMinutes
+          SLOT_CAPACITY: !Ref SlotCapacity
+          SLOTS_TABLE: !Ref SlotsTableName
+          CALLBACKS_TABLE: !Ref CallbacksTableName
+          CONNECT_QUEUE_ID: !Ref ConnectQueueId
+          CONTACT_FLOW_ID: !Ref TaskContactFlowId
+      Code:
+        ZipFile: |
+          def lambda_handler(event, context):
+              # PLACEHOLDER — replace with the real slot-booking code after deploy.
+              return {
+                  "result": "NOT_IMPLEMENTED",
+                  "message": "Placeholder callback-slot-booking. Upload the real code.",
+              }
+
+  # ---------------------------------------------------------------------------
+  # Let Amazon Connect invoke both functions
+  # ---------------------------------------------------------------------------
+
+  SuggesterConnectPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref SuggesterFunction
+      Action: lambda:InvokeFunction
+      Principal: connect.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+
+  BookingConnectPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref BookingFunction
+      Action: lambda:InvokeFunction
+      Principal: connect.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+
+# -----------------------------------------------------------------------------
+# Outputs
+# -----------------------------------------------------------------------------
+Outputs:
+
+  SlotsTableName:
+    Description: DynamoDB table holding per-slot booking counters.
+    Value: !Ref CallbackSlotsTable
+
+  CallbacksTableName:
+    Description: DynamoDB table holding scheduled callback records.
+    Value: !Ref CallbacksTable
+
+  SuggesterFunctionArn:
+    Description: ARN of the slot-suggester function (add as a Lambda in Connect).
+    Value: !GetAtt SuggesterFunction.Arn
+
+  BookingFunctionArn:
+    Description: ARN of the slot-booking function (add as a Lambda in Connect).
+    Value: !GetAtt BookingFunction.Arn
