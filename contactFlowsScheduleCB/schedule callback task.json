@@ -1,0 +1,86 @@
+{
+  "Version": "2019-10-30",
+  "StartAction": "062ddc36-8686-4fe1-b3cb-609c9bd76fa0",
+  "Metadata": {
+    "entryPointPosition": {
+      "x": 40,
+      "y": 40
+    },
+    "ActionMetadata": {
+      "a01b10e4-909c-448c-8037-d92cb28bacee": {
+        "position": {
+          "x": 895.2,
+          "y": 212
+        }
+      },
+      "062ddc36-8686-4fe1-b3cb-609c9bd76fa0": {
+        "position": {
+          "x": 310.4,
+          "y": 181.6
+        },
+        "parameters": {
+          "QueueId": {
+            "displayName": "BasicQueue"
+          }
+        },
+        "queue": {
+          "text": "BasicQueue"
+        }
+      },
+      "0722d79b-2b8c-48ca-a199-0925ba72e53f": {
+        "position": {
+          "x": 603.2,
+          "y": 182.4
+        }
+      }
+    },
+    "Annotations": [],
+    "name": "schedule callback task",
+    "description": "",
+    "type": "contactFlow",
+    "status": "published",
+    "hash": {}
+  },
+  "Actions": [
+    {
+      "Parameters": {},
+      "Identifier": "a01b10e4-909c-448c-8037-d92cb28bacee",
+      "Type": "DisconnectParticipant",
+      "Transitions": {}
+    },
+    {
+      "Parameters": {
+        "QueueId": "arn:aws:connect:us-west-2:456495836580:instance/c4e12c09-094e-41c2-9ae5-9feef0be45c3/queue/565a4db9-fc45-4cc1-a2bb-715e163b2bd3"
+      },
+      "Identifier": "062ddc36-8686-4fe1-b3cb-609c9bd76fa0",
+      "Type": "UpdateContactTargetQueue",
+      "Transitions": {
+        "NextAction": "0722d79b-2b8c-48ca-a199-0925ba72e53f",
+        "Errors": [
+          {
+            "NextAction": "0722d79b-2b8c-48ca-a199-0925ba72e53f",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {},
+      "Identifier": "0722d79b-2b8c-48ca-a199-0925ba72e53f",
+      "Type": "TransferContactToQueue",
+      "Transitions": {
+        "NextAction": "a01b10e4-909c-448c-8037-d92cb28bacee",
+        "Errors": [
+          {
+            "NextAction": "a01b10e4-909c-448c-8037-d92cb28bacee",
+            "ErrorType": "QueueAtCapacity"
+          },
+          {
+            "NextAction": "a01b10e4-909c-448c-8037-d92cb28bacee",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    }
+  ]
+}

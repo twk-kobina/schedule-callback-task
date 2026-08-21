@@ -1,0 +1,161 @@
+{
+  "Version": "2019-10-30",
+  "StartAction": "166144be-159d-4ec0-88ab-eb973c1b5d8f",
+  "Metadata": {
+    "entryPointPosition": {
+      "x": 40,
+      "y": 40
+    },
+    "ActionMetadata": {
+      "c2596bdf-b320-4355-8d6b-eb969f42bb87": {
+        "position": {
+          "x": 1653.6,
+          "y": 215.2
+        }
+      },
+      "81d86a8c-a71e-4abf-9028-acd8146225f1": {
+        "position": {
+          "x": 1322.4,
+          "y": 160
+        }
+      },
+      "166144be-159d-4ec0-88ab-eb973c1b5d8f": {
+        "position": {
+          "x": 178.4,
+          "y": 135.2
+        }
+      },
+      "53a9a0e2-1032-40e3-8079-e6a6c777fba3": {
+        "position": {
+          "x": 1017.6,
+          "y": 142.4
+        },
+        "parameters": {
+          "QueueId": {
+            "displayName": "BasicQueue"
+          }
+        },
+        "queue": {
+          "text": "BasicQueue"
+        }
+      },
+      "e706e4fb-afce-4a84-9bb5-ca082d496d33": {
+        "position": {
+          "x": 410.4,
+          "y": 139.2
+        },
+        "parameters": {
+          "EventHooks": {
+            "CustomerQueue": {
+              "displayName": "schedule callback customer queue"
+            }
+          }
+        },
+        "contactFlow": {
+          "text": "schedule callback customer queue",
+          "id": "arn:aws:connect:us-west-2:456495836580:instance/c4e12c09-094e-41c2-9ae5-9feef0be45c3/contact-flow/7cc23965-6e43-452e-b83c-9a48aa4ac583"
+        },
+        "customerOrAgent": true
+      },
+      "0435695d-4b9a-4dae-b427-f9c7bce72597": {
+        "position": {
+          "x": 712,
+          "y": 144.8
+        }
+      }
+    },
+    "Annotations": [],
+    "name": "schedule callback inbound",
+    "description": "",
+    "type": "contactFlow",
+    "status": "published",
+    "hash": {}
+  },
+  "Actions": [
+    {
+      "Parameters": {},
+      "Identifier": "c2596bdf-b320-4355-8d6b-eb969f42bb87",
+      "Type": "DisconnectParticipant",
+      "Transitions": {}
+    },
+    {
+      "Parameters": {},
+      "Identifier": "81d86a8c-a71e-4abf-9028-acd8146225f1",
+      "Type": "TransferContactToQueue",
+      "Transitions": {
+        "NextAction": "c2596bdf-b320-4355-8d6b-eb969f42bb87",
+        "Errors": [
+          {
+            "NextAction": "c2596bdf-b320-4355-8d6b-eb969f42bb87",
+            "ErrorType": "QueueAtCapacity"
+          },
+          {
+            "NextAction": "c2596bdf-b320-4355-8d6b-eb969f42bb87",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {
+        "FlowLoggingBehavior": "Enabled"
+      },
+      "Identifier": "166144be-159d-4ec0-88ab-eb973c1b5d8f",
+      "Type": "UpdateFlowLoggingBehavior",
+      "Transitions": {
+        "NextAction": "e706e4fb-afce-4a84-9bb5-ca082d496d33"
+      }
+    },
+    {
+      "Parameters": {
+        "QueueId": "arn:aws:connect:us-west-2:456495836580:instance/c4e12c09-094e-41c2-9ae5-9feef0be45c3/queue/565a4db9-fc45-4cc1-a2bb-715e163b2bd3"
+      },
+      "Identifier": "53a9a0e2-1032-40e3-8079-e6a6c777fba3",
+      "Type": "UpdateContactTargetQueue",
+      "Transitions": {
+        "NextAction": "81d86a8c-a71e-4abf-9028-acd8146225f1",
+        "Errors": [
+          {
+            "NextAction": "81d86a8c-a71e-4abf-9028-acd8146225f1",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {
+        "EventHooks": {
+          "CustomerQueue": "arn:aws:connect:us-west-2:456495836580:instance/c4e12c09-094e-41c2-9ae5-9feef0be45c3/contact-flow/7cc23965-6e43-452e-b83c-9a48aa4ac583"
+        }
+      },
+      "Identifier": "e706e4fb-afce-4a84-9bb5-ca082d496d33",
+      "Type": "UpdateContactEventHooks",
+      "Transitions": {
+        "NextAction": "0435695d-4b9a-4dae-b427-f9c7bce72597",
+        "Errors": [
+          {
+            "NextAction": "0435695d-4b9a-4dae-b427-f9c7bce72597",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {
+        "SkipWhenDTMFBufferEnabled": "false",
+        "Text": "Thank you for calling Tech with Kobina. This is a test of our Scheduled callback system. "
+      },
+      "Identifier": "0435695d-4b9a-4dae-b427-f9c7bce72597",
+      "Type": "MessageParticipant",
+      "Transitions": {
+        "NextAction": "53a9a0e2-1032-40e3-8079-e6a6c777fba3",
+        "Errors": [
+          {
+            "NextAction": "53a9a0e2-1032-40e3-8079-e6a6c777fba3",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    }
+  ]
+}
